@@ -82,6 +82,20 @@ impl<'de> toml_span::Deserialize<'de> for TomlTask {
             let clean_env = th.optional("clean-env").unwrap_or(false);
             let args = th.optional::<Vec<TaskArg>>("args");
 
+            let mut have_default = false;
+            for arg in args.as_ref().unwrap_or(&vec![]) {
+                if arg.default.is_some() {
+                    have_default = true;
+                }
+                if have_default && arg.default.is_none() {
+                    return Err(expected(
+                        "default value required after previous arguments with defaults",
+                        ValueInner::Table(Default::default()),
+                        value.span,
+                    )
+                    .into());
+                }
+            }
             th.finalize(None)?;
 
             Task::Execute(Box::new(Execute {

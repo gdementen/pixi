@@ -408,14 +408,13 @@ def test_task_args(pixi: Path, tmp_pixi_workspace: Path) -> None:
     {EMPTY_BOILERPLATE_PROJECT}
     [tasks]
     # Test basic argument expansion
-    test_single = {{ cmd = "echo tests/{{{{ python-file }}}} || echo tests failed", args = [{{ name = "python-file", default = "test.py" }}] }}
+    test_single = {{ cmd = "echo tests/{{{{ python-file }}}} || echo tests failed", args = [{{ name = "python-file", default = "test.py" }}, {{ name = "python-file2" }}] }}
+
+    test_default_args = {{
+        cmd = "echo {{ type }} --path {{ path }}",
+        args = ["path", {{ name = "type", default = "--release" }}]
+    }}
     """
-    print(toml)
-    # # Test default arguments
-    # install = {{
-    #     cmd = "cargo install {{ type }} --path {{ path }}",
-    #     args = ["path", {{ name = "type", default = "--release" }}]
-    # }}
 
     # # Test multiple parameters to single argument
     # build = {{
@@ -445,6 +444,12 @@ def test_task_args(pixi: Path, tmp_pixi_workspace: Path) -> None:
     verify_cli_command(
         [pixi, "run", "--manifest-path", manifest, "test_single"],
         stdout_contains="tests/test.py",
+    )
+
+    # Test default arguments
+    verify_cli_command(
+        [pixi, "run", "--manifest-path", manifest, "test_default_args", "test.py"],
+        stdout_contains="--release --path test.py",
     )
 
     # # Test missing required argument
