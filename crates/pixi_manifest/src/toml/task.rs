@@ -6,10 +6,32 @@ use toml_span::{
 };
 
 use crate::{
-    task::{Alias, CmdArgs, Execute},
+    task::{Alias, CmdArgs, Execute, TaskArg},
     warning::Deprecation,
     Task, TaskName, WithWarnings,
 };
+
+impl<'de> toml_span::Deserialize<'de> for TaskArg {
+    fn deserialize(value: &mut Value<'de>) -> Result<Self, DeserError> {
+        let mut th = match value.take() {
+            ValueInner::String(str) => {
+                return Ok(TaskArg {
+                    name: str.into_owned(),
+                    default: None,
+                })
+            }
+            ValueInner::Table(table) => TableHelper::from((table, value.span)),
+            inner => return Err(expected("string or table", inner, value.span).into()),
+        };
+
+        let name = th.required::<String>("name")?;
+        let default = th.optional::<String>("default");
+
+        th.finalize(None)?;
+
+        Ok(TaskArg { name, default })
+    }
+}
 
 /// A task defined in the manifest.
 pub type TomlTask = WithWarnings<Task>;
@@ -58,10 +80,11 @@ impl<'de> toml_span::Deserialize<'de> for TomlTask {
                 .map(TomlIndexMap::into_inner);
             let description = th.optional("description");
             let clean_env = th.optional("clean-env").unwrap_or(false);
+            let args = th.optional::<Vec<TaskArg>>("args");
 
             th.finalize(None)?;
 
-            Task::Execute(Execute {
+            Task::Execute(Box::new(Execute {
                 cmd,
                 inputs,
                 outputs,
@@ -70,7 +93,8 @@ impl<'de> toml_span::Deserialize<'de> for TomlTask {
                 env,
                 description,
                 clean_env,
-            })
+                args: args.map(|args| args.into_iter().map(|arg| (arg, None)).collect()),
+            }))
         } else {
             let depends_on = depends_on(&mut th).unwrap_or_default();
             let description = th.optional("description");

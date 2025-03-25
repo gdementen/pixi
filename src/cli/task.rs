@@ -11,7 +11,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use miette::IntoDiagnostic;
 use pixi_manifest::{
-    task::{quote, Alias, CmdArgs, Execute, Task, TaskName},
+    task::{quote, Alias, CmdArgs, Execute, Task, TaskArg, TaskName},
     EnvironmentName, FeatureName,
 };
 use rattler_conda_types::Platform;
@@ -100,6 +100,10 @@ pub struct AddArgs {
     /// environment to run the task.
     #[arg(long)]
     pub clean_env: bool,
+
+    /// The arguments to pass to the task
+    #[arg(long, num_args = 1..)]
+    pub args: Option<Vec<TaskArg>>,
 }
 
 /// Parse a single key-value pair
@@ -201,8 +205,9 @@ impl From<AddArgs> for Task {
                 }
                 Some(env)
             };
+            let args = value.args;
 
-            Self::Execute(Execute {
+            Self::Execute(Box::new(Execute {
                 cmd: CmdArgs::Single(cmd_args),
                 depends_on,
                 inputs: None,
@@ -211,7 +216,8 @@ impl From<AddArgs> for Task {
                 env,
                 description,
                 clean_env,
-            })
+                args: args.map(|args| args.into_iter().map(|arg| (arg, None)).collect()),
+            }))
         }
     }
 }

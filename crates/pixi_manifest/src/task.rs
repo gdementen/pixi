@@ -56,7 +56,7 @@ impl FromStr for TaskName {
 #[derive(Debug, Clone)]
 pub enum Task {
     Plain(String),
-    Execute(Execute),
+    Execute(Box<Execute>),
     Alias(Alias),
     Custom(Custom),
 }
@@ -185,6 +185,14 @@ impl Task {
             _ => None,
         }
     }
+
+    /// Returns the arguments of the task.
+    pub fn get_args(&self) -> Option<&IndexMap<TaskArg, Option<String>>> {
+        match self {
+            Task::Execute(exe) => exe.args.as_ref(),
+            _ => None,
+        }
+    }
 }
 
 /// A command script executes a single command from the environment
@@ -218,11 +226,34 @@ pub struct Execute {
 
     /// Isolate the task from the running machine
     pub clean_env: bool,
+
+    /// The arguments to pass to the task
+    pub args: Option<IndexMap<TaskArg, Option<String>>>,
 }
 
 impl From<Execute> for Task {
     fn from(value: Execute) -> Self {
-        Task::Execute(value)
+        Task::Execute(Box::new(value))
+    }
+}
+
+#[derive(Debug, Clone, Eq, Hash, PartialEq)]
+pub struct TaskArg {
+    /// The name of the argument
+    pub name: String,
+
+    /// The default value of the argument
+    pub default: Option<String>,
+}
+
+impl std::str::FromStr for TaskArg {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(TaskArg {
+            name: s.to_string(),
+            default: None,
+        })
     }
 }
 

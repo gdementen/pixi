@@ -1,7 +1,12 @@
 import json
 from pathlib import Path
 
-from .common import EMPTY_BOILERPLATE_PROJECT, verify_cli_command, ExitCode, default_env_path
+from .common import (
+    EMPTY_BOILERPLATE_PROJECT,
+    verify_cli_command,
+    ExitCode,
+    default_env_path,
+)
 
 import tempfile
 import os
@@ -137,13 +142,17 @@ def test_using_prefix_validation(
     )
 
     # Validate creation of the pixi file with the hash
-    pixi_file = default_env_path(tmp_pixi_workspace).joinpath("conda-meta").joinpath("pixi")
+    pixi_file = (
+        default_env_path(tmp_pixi_workspace).joinpath("conda-meta").joinpath("pixi")
+    )
     assert pixi_file.exists()
     assert "environment_lock_file_hash" in pixi_file.read_text()
 
     # Break environment on purpose
     dummy_a_meta_files = (
-        default_env_path(tmp_pixi_workspace).joinpath("conda-meta").glob("dummy-a*.json")
+        default_env_path(tmp_pixi_workspace)
+        .joinpath("conda-meta")
+        .glob("dummy-a*.json")
     )
 
     for file in dummy_a_meta_files:
@@ -172,7 +181,9 @@ def test_using_prefix_validation(
         assert Path(file).exists()
 
 
-def test_prefix_revalidation(pixi: Path, tmp_pixi_workspace: Path, dummy_channel_1: str) -> None:
+def test_prefix_revalidation(
+    pixi: Path, tmp_pixi_workspace: Path, dummy_channel_1: str
+) -> None:
     manifest = tmp_pixi_workspace.joinpath("pixi.toml")
     toml = f"""
     [project]
@@ -191,13 +202,17 @@ def test_prefix_revalidation(pixi: Path, tmp_pixi_workspace: Path, dummy_channel
     )
 
     # Validate creation of the pixi file with the hash
-    pixi_file = default_env_path(tmp_pixi_workspace).joinpath("conda-meta").joinpath("pixi")
+    pixi_file = (
+        default_env_path(tmp_pixi_workspace).joinpath("conda-meta").joinpath("pixi")
+    )
     assert pixi_file.exists()
     assert "environment_lock_file_hash" in pixi_file.read_text()
 
     # Break environment on purpose
     dummy_a_meta_files = (
-        default_env_path(tmp_pixi_workspace).joinpath("conda-meta").glob("dummy-a*.json")
+        default_env_path(tmp_pixi_workspace)
+        .joinpath("conda-meta")
+        .glob("dummy-a*.json")
     )
 
     for file in dummy_a_meta_files:
@@ -278,7 +293,9 @@ def test_run_with_activation(pixi: Path, tmp_pixi_workspace: Path) -> None:
     )
 
 
-def test_detached_environments_run(pixi: Path, tmp_path: Path, dummy_channel_1: str) -> None:
+def test_detached_environments_run(
+    pixi: Path, tmp_path: Path, dummy_channel_1: str
+) -> None:
     tmp_project = tmp_path.joinpath("pixi-project")
     tmp_project.mkdir()
     detached_envs_tmp = tmp_path.joinpath("pixi-detached-envs")
@@ -286,7 +303,9 @@ def test_detached_environments_run(pixi: Path, tmp_path: Path, dummy_channel_1: 
 
     # Create a dummy project
     verify_cli_command([pixi, "init", tmp_project, "--channel", dummy_channel_1])
-    verify_cli_command([pixi, "add", "dummy-a", "--no-install", "--manifest-path", manifest])
+    verify_cli_command(
+        [pixi, "add", "dummy-a", "--no-install", "--manifest-path", manifest]
+    )
 
     # Set detached environments
     verify_cli_command(
@@ -372,3 +391,117 @@ def test_run_dry_run(pixi: Path, tmp_pixi_workspace: Path) -> None:
         stdout_excludes="WET",
         stderr_excludes="WET",
     )
+
+
+def test_run_args(pixi: Path, tmp_pixi_workspace: Path) -> None:
+    manifest = tmp_pixi_workspace.joinpath("pixi.toml")
+    toml = f"""
+    {EMPTY_BOILERPLATE_PROJECT}
+    [tasks]
+    """
+    manifest.write_text(toml)
+
+
+def test_task_args(pixi: Path, tmp_pixi_workspace: Path) -> None:
+    manifest = tmp_pixi_workspace.joinpath("pixi.toml")
+    toml = f"""
+    {EMPTY_BOILERPLATE_PROJECT}
+    [tasks]
+    # Test basic argument expansion
+    test_single = {{ cmd = "echo tests/{{{{ python-file }}}} || echo tests failed", args = [{{ name = "python-file", default = "test.py" }}] }}
+    """
+    print(toml)
+    # # Test default arguments
+    # install = {{
+    #     cmd = "cargo install {{ type }} --path {{ path }}",
+    #     args = ["path", {{ name = "type", default = "--release" }}]
+    # }}
+
+    # # Test multiple parameters to single argument
+    # build = {{
+    #     cmd = "cargo build {{ flags }}",
+    #     args = ["flags"]
+    # }}
+
+    # # Test task dependencies with argument passing
+    # test-all = {{
+    #     depends-on = [
+    #         {{ task = "test_single", args = ["test1.py"] }},
+    #         {{ task = "test_single", args = ["test2.py"] }}
+    #     ]
+    # }}
+
+    # # Test environment-specific task with argument passing
+    # [feature.a.tasks]
+    # test-feature = {{
+    #     depends-on = [
+    #         {{ task = "test_single", args = ["feature_test.py"], environment = "a" }}
+    #     ]
+    # }}
+    # """
+    manifest.write_text(toml)
+
+    # Test basic argument expansion
+    verify_cli_command(
+        [pixi, "run", "--manifest-path", manifest, "test_single"],
+        stdout_contains="tests/test.py",
+    )
+
+    # # Test missing required argument
+    # verify_cli_command(
+    #     [pixi, "run", "--manifest-path", manifest, "test_single"],
+    #     ExitCode.FAILURE,
+    #     stderr_contains="missing required argument",
+    # )
+
+    # # Test default arguments
+    # verify_cli_command(
+    #     [pixi, "run", "--manifest-path", manifest, "install", "/path/to/manifest"],
+    #     stdout_contains="cargo install --release --path /path/to/manifest",
+    # )
+
+    # # Test overriding default argument
+    # verify_cli_command(
+    #     [
+    #         pixi,
+    #         "run",
+    #         "--manifest-path",
+    #         manifest,
+    #         "install",
+    #         "/path/to/manifest",
+    #         "--debug",
+    #     ],
+    #     stdout_contains="cargo install --debug --path /path/to/manifest",
+    # )
+
+    # # Test multiple parameters to single argument
+    # verify_cli_command(
+    #     [pixi, "run", "--manifest-path", manifest, "build", "--release --verbose"],
+    #     stdout_contains="cargo build --release --verbose",
+    # )
+
+    # # Test task dependencies with argument passing
+    # verify_cli_command(
+    #     [pixi, "run", "--manifest-path", manifest, "test-all"],
+    #     stdout_contains=["pytest tests/test1.py", "pytest tests/test2.py"],
+    # )
+
+    # # Test environment-specific task with argument passing
+    # verify_cli_command(
+    #     [
+    #         pixi,
+    #         "run",
+    #         "--manifest-path",
+    #         manifest,
+    #         "--environment",
+    #         "a",
+    #         "test-feature",
+    #     ],
+    #     stdout_contains="pytest tests/feature_test.py",
+    # )
+
+    # # Test backwards compatibility - arguments should be appended if no args field
+    # verify_cli_command(
+    #     [pixi, "run", "--manifest-path", manifest, "echo", "hello", "world"],
+    #     stdout_contains="echo hello world",
+    # )

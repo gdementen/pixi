@@ -15,6 +15,7 @@ use pixi_consts::consts;
 use pixi_manifest::{Task, TaskName};
 use pixi_progress::await_in_progress;
 use rattler_lock::LockFile;
+use regex;
 use thiserror::Error;
 use tokio::task::JoinHandle;
 
@@ -114,6 +115,25 @@ impl<'p> ExecutableTask<'p> {
     pub(crate) fn project(&self) -> &'p Workspace {
         self.workspace
     }
+    /// Replaces the arguments in the task with the values from the task args.
+    fn replace_args(&self, task: &str) -> Result<String, String> {
+        let mut task = task.to_string();
+        if let Some(args) = self.task().get_args() {
+            for (arg, value) in args {
+                // Match {{ arg_name }} with flexible whitespace
+                let pattern = format!(r"\{{\{{\s*{}\s*\}}\}}", regex::escape(&arg.name));
+                let replacement = match value {
+                    Some(val) => val,
+                    None => arg.default.as_deref().unwrap_or(""),
+                };
+                task = regex::Regex::new(&pattern)
+                    .map_err(|e| format!("Invalid regex pattern: {}", e))?
+                    .replace_all(&task, replacement)
+                    .into_owned();
+            }
+        }
+        Ok(task)
+    }
 
     /// Returns the task as script
     fn as_script(&self) -> Option<String> {
@@ -147,6 +167,14 @@ impl<'p> ExecutableTask<'p> {
     ) -> Result<Option<SequentialList>, FailedToParseShellScript> {
         if let Some(full_script) = self.as_script() {
             tracing::debug!("Parsing shell script: {}", full_script);
+
+            // Replace the arguments with the values
+            let full_script =
+                self.replace_args(&full_script)
+                    .map_err(|e| FailedToParseShellScript {
+                        script: full_script,
+                        error: e,
+                    })?;
 
             // Parse the shell command
             deno_task_shell::parser::parse(full_script.trim())
