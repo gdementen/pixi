@@ -161,14 +161,32 @@ impl<'p> TaskGraph<'p> {
                         Some(explicit_env) if task_env.is_default() => explicit_env,
                         _ => task_env,
                     };
+
+                    let task_name = args.remove(0);
+
+                    let (task_with_args, task_args) = if let Some(argument_map) = task.get_args() {
+                        // Check if we don't have more arguments than the task expects
+                        if args.len() > argument_map.len() {
+                            return Err(TaskGraphError::TooManyArguments(task_name.to_string()));
+                        }
+
+                        let updated_task = task
+                            .with_updated_args(&args)
+                            .expect("Failed to update task arguments");
+
+                        (Cow::Owned(updated_task), vec![])
+                    } else {
+                        (Cow::Borrowed(task), args.clone())
+                    };
+
                     if skip_deps {
                         return Ok(Self {
                             project,
                             nodes: vec![TaskNode {
-                                name: Some(args.remove(0).into()),
-                                task: Cow::Borrowed(task),
+                                name: Some(task_name.into()),
+                                task: task_with_args,
                                 run_environment: run_env,
-                                additional_args: args,
+                                additional_args: task_args,
                                 dependencies: vec![],
                             }],
                         });
@@ -177,10 +195,10 @@ impl<'p> TaskGraph<'p> {
                         project,
                         search_envs,
                         TaskNode {
-                            name: Some(args.remove(0).into()),
-                            task: Cow::Borrowed(task),
+                            name: Some(task_name.into()),
+                            task: task_with_args,
                             run_environment: run_env,
-                            additional_args: args,
+                            additional_args: task_args,
                             dependencies: vec![],
                         },
                     );
@@ -344,6 +362,9 @@ pub enum TaskGraphError {
 
     #[error("could not split task, assuming non valid task")]
     InvalidTask,
+
+    #[error("task {0} has more arguments than expected")]
+    TooManyArguments(String),
 }
 
 #[cfg(test)]

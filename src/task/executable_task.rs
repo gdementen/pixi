@@ -124,7 +124,13 @@ impl<'p> ExecutableTask<'p> {
                 let pattern = format!(r"\{{\{{\s*{}\s*\}}\}}", regex::escape(&arg.name));
                 let replacement = match value {
                     Some(val) => val,
-                    None => arg.default.as_deref().unwrap_or(""),
+                    None => arg.default.as_deref().ok_or_else(|| {
+                        format!(
+                            "no value provided for argument {} in task {}",
+                            arg.name,
+                            self.name().unwrap_or("default")
+                        )
+                    })?,
                 };
                 task = regex::Regex::new(&pattern)
                     .map_err(|e| format!("Invalid regex pattern: {}", e))?

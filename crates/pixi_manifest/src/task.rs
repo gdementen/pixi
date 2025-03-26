@@ -193,6 +193,32 @@ impl Task {
             _ => None,
         }
     }
+
+    /// Creates a new task with updated arguments from the provided values.
+    /// Returns None if the task doesn't support arguments.
+    pub fn with_updated_args(&self, arg_values: &[String]) -> Option<Self> {
+        match self {
+            Task::Execute(exe) => {
+                if let Some(args_map) = &exe.args {
+                    let mut new_args = args_map.clone();
+                    for ((arg_name, _), value) in args_map.iter().zip(arg_values.iter()) {
+                        if let Some(arg_value) = new_args.get_mut(arg_name) {
+                            *arg_value = Some(value.clone());
+                        }
+                    }
+
+                    // Create a new Execute with the updated args
+                    let mut new_exe = (**exe).clone();
+                    new_exe.args = Some(new_args);
+
+                    Some(Task::Execute(Box::new(new_exe)))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
 }
 
 /// A command script executes a single command from the environment
