@@ -92,12 +92,40 @@ impl<'p> ExecutableTask<'p> {
     /// Constructs a new executable task from a task graph node.
     pub fn from_task_graph(task_graph: &TaskGraph<'p>, task_id: TaskId) -> Self {
         let node = &task_graph[task_id];
+
+        let task = if let Some(argument_values) = node.arguments_values.clone() {
+            // Create a task with updated arguments
+            match &node.task {
+                Cow::Borrowed(task) => {
+                    Cow::Owned(task.with_updated_args(&argument_values).unwrap_or_else(|| {
+                        tracing::warn!(
+                            "Failed to update arguments for task {}",
+                            node.name.as_ref().unwrap_or(&"default".into())
+                        );
+                        (*task).clone()
+                    }))
+                }
+                Cow::Owned(task) => {
+                    Cow::Owned(task.with_updated_args(&argument_values).unwrap_or_else(|| {
+                        tracing::warn!(
+                            "Failed to update arguments for task {}",
+                            node.name.as_ref().unwrap_or(&"default".into())
+                        );
+                        task.clone()
+                    }))
+                }
+            }
+        } else {
+            // Clone the existing task
+            node.task.clone()
+        };
+
         Self {
             workspace: task_graph.project(),
             name: node.name.clone(),
-            task: node.task.clone(),
+            task,
             run_environment: node.run_environment.clone(),
-            additional_args: node.additional_args.clone(),
+            additional_args: node.additional_args.clone().unwrap_or_default(),
         }
     }
 

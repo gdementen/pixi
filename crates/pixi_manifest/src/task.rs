@@ -11,6 +11,18 @@ use itertools::Itertools;
 use serde::Serialize;
 use toml_edit::{Array, Item, Table, Value};
 
+/// A wrapper for displaying a task dependency tuple
+pub struct DisplayDependency<'a>(&'a (TaskName, Option<Vec<String>>));
+
+impl Display for DisplayDependency<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self.0 .1 {
+            Some(args) if !args.is_empty() => write!(f, "{} with args", self.0 .0),
+            _ => write!(f, "{}", self.0 .0),
+        }
+    }
+}
+
 /// Represents a task name
 #[derive(Debug, Clone, Serialize, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct TaskName(String);
@@ -44,6 +56,55 @@ impl From<TaskName> for String {
     }
 }
 
+/// A task dependency with optional args
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+pub struct Dependency(pub TaskName, pub Option<Vec<String>>);
+
+impl Dependency {
+    pub fn name(&self) -> &TaskName {
+        &self.0
+    }
+
+    pub fn args(&self) -> &Option<Vec<String>> {
+        &self.1
+    }
+}
+
+impl From<TaskName> for Dependency {
+    fn from(name: TaskName) -> Self {
+        Dependency(name, None)
+    }
+}
+
+impl From<Dependency> for (TaskName, Option<Vec<String>>) {
+    fn from(dep: Dependency) -> Self {
+        (dep.0, dep.1)
+    }
+}
+
+impl From<&str> for Dependency {
+    fn from(s: &str) -> Self {
+        Dependency(TaskName(s.to_string()), None)
+    }
+}
+
+impl std::str::FromStr for Dependency {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Dependency(TaskName(s.to_string()), None))
+    }
+}
+
+impl std::fmt::Display for Dependency {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.1 {
+            Some(args) if !args.is_empty() => write!(f, "{} with args", self.0),
+            _ => write!(f, "{}", self.0),
+        }
+    }
+}
+
 impl FromStr for TaskName {
     type Err = Infallible;
 
@@ -63,7 +124,7 @@ pub enum Task {
 
 impl Task {
     /// Returns the names of the task that this task depends on
-    pub fn depends_on(&self) -> &[TaskName] {
+    pub fn depends_on(&self) -> &[Dependency] {
         match self {
             Task::Plain(_) | Task::Custom(_) => &[],
             Task::Execute(cmd) => &cmd.depends_on,
@@ -199,6 +260,11 @@ impl Task {
     pub fn with_updated_args(&self, arg_values: &[String]) -> Option<Self> {
         match self {
             Task::Execute(exe) => {
+                if arg_values.len() > exe.args.as_ref().map_or(0, |args| args.len()) {
+                    tracing::warn!("Task has more arguments than provided values");
+                    return None;
+                }
+
                 if let Some(args_map) = &exe.args {
                     let mut new_args = args_map.clone();
                     for ((arg_name, _), value) in args_map.iter().zip(arg_values.iter()) {
@@ -238,7 +304,7 @@ pub struct Execute {
 
     /// A list of commands that should be run before this one
     // BREAK: Make the remove the alias and force kebab-case
-    pub depends_on: Vec<TaskName>,
+    pub depends_on: Vec<Dependency>,
 
     /// The working directory for the command relative to the root of the
     /// project.
@@ -341,7 +407,7 @@ impl CmdArgs {
 #[derive(Debug, Clone)]
 pub struct Alias {
     /// A list of commands that should be run before this one
-    pub depends_on: Vec<TaskName>,
+    pub depends_on: Vec<Dependency>,
 
     /// A description of the task.
     pub description: Option<String>,
@@ -363,7 +429,7 @@ impl Display for Task {
         let depends_on = self.depends_on();
         if !depends_on.is_empty() {
             if depends_on.len() == 1 {
-                write!(f, ", depends-on = '{}'", depends_on.iter().format(","))?;
+                write!(f, ", depends-on = '{}'", depends_on[0])?;
             } else {
                 write!(f, ", depends-on = [{}]", depends_on.iter().format(","))?;
             }
@@ -423,13 +489,22 @@ impl From<Task> for Item {
                 if !process.depends_on.is_empty() {
                     table.insert(
                         "depends-on",
-                        Value::Array(Array::from_iter(
-                            process
-                                .depends_on
-                                .into_iter()
-                                .map(String::from)
-                                .map(Value::from),
-                        )),
+                        Value::Array(Array::from_iter(process.depends_on.into_iter().map(
+                            |dep| match dep.args() {
+                                Some(args) if !args.is_empty() => {
+                                    let mut table = Table::new().into_inline_table();
+                                    table.insert("task", dep.name().to_string().into());
+                                    table.insert(
+                                        "args",
+                                        Value::Array(Array::from_iter(
+                                            args.iter().map(|arg| Value::from(arg.clone())),
+                                        )),
+                                    );
+                                    Value::InlineTable(table)
+                                }
+                                _ => Value::from(dep.name().to_string()),
+                            },
+                        ))),
                     );
                 }
                 if let Some(cwd) = process.cwd {
@@ -447,13 +522,22 @@ impl From<Task> for Item {
                 let mut table = Table::new().into_inline_table();
                 table.insert(
                     "depends-on",
-                    Value::Array(Array::from_iter(
-                        alias
-                            .depends_on
-                            .into_iter()
-                            .map(String::from)
-                            .map(Value::from),
-                    )),
+                    Value::Array(Array::from_iter(alias.depends_on.into_iter().map(|dep| {
+                        match dep.args() {
+                            Some(args) if !args.is_empty() => {
+                                let mut table = Table::new().into_inline_table();
+                                table.insert("task", dep.name().to_string().into());
+                                table.insert(
+                                    "args",
+                                    Value::Array(Array::from_iter(
+                                        args.iter().map(|arg| Value::from(arg.clone())),
+                                    )),
+                                );
+                                Value::InlineTable(table)
+                            }
+                            _ => Value::from(dep.name().to_string()),
+                        }
+                    }))),
                 );
                 Item::Value(Value::InlineTable(table))
             }

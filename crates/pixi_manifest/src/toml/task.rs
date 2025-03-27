@@ -6,7 +6,7 @@ use toml_span::{
 };
 
 use crate::{
-    task::{Alias, CmdArgs, Execute, TaskArg},
+    task::{Alias, CmdArgs, Dependency, Execute, TaskArg},
     warning::Deprecation,
     Task, TaskName, WithWarnings,
 };
@@ -48,16 +48,23 @@ impl<'de> toml_span::Deserialize<'de> for TomlTask {
         let mut warnings = Vec::new();
 
         let mut depends_on = |th: &mut TableHelper| {
-            let depends_on = th.optional::<TomlWith<_, OneOrMany<TomlFromStr<_>>>>("depends-on");
+            let depends_on =
+                th.optional::<TomlWith<_, OneOrMany<TomlFromStr<Dependency>>>>("depends-on");
             if let Some(depends_on) = depends_on {
-                return Some(depends_on.into_inner());
+                let deps = depends_on.into_inner();
+                return Some(deps);
             }
 
             if let Some((key, mut value)) = th.table.remove_entry("depends_on") {
                 warnings
                     .push(Deprecation::renamed_field("depends_on", "depends-on", key.span).into());
-                return match TomlWith::<_, OneOrMany<TomlFromStr<_>>>::deserialize(&mut value) {
-                    Ok(depends_on) => Some(depends_on.into_inner()),
+                return match TomlWith::<_, OneOrMany<TomlFromStr<Dependency>>>::deserialize(
+                    &mut value,
+                ) {
+                    Ok(depends_on) => {
+                        let deps = depends_on.into_inner();
+                        Some(deps)
+                    }
                     Err(err) => {
                         th.errors.extend(err.errors);
                         None

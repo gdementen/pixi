@@ -398,22 +398,28 @@ def test_invalid_task_args(pixi: Path, tmp_pixi_workspace: Path) -> None:
     manifest.write_text(toml)
 
     verify_cli_command(
-        [pixi, "run", "--manifest-path", manifest, "task_invalid_defaults", "arg1", "arg2", "arg3"],
+        [
+            pixi,
+            "run",
+            "--manifest-path",
+            manifest,
+            "task_invalid_defaults",
+            "arg1",
+            "arg2",
+            "arg3",
+        ],
         ExitCode.FAILURE,
         stderr_contains="expected default value required after previous arguments with defaults",
     )
 
 
-def test_task_args(pixi: Path, tmp_pixi_workspace: Path) -> None:
+def test_task_args_with_defaults(pixi: Path, tmp_pixi_workspace: Path) -> None:
+    """Test tasks with all default arguments."""
     manifest = tmp_pixi_workspace.joinpath("pixi.toml")
     toml = f"""
     {EMPTY_BOILERPLATE_PROJECT}
     [tasks]
     task_with_defaults = {{ cmd = "echo Running task with {{{{ arg1 }}}} and {{{{ arg2 }}}} and {{{{ arg3 }}}}", args = [{{ name = "arg1", default = "default1" }}, {{ name = "arg2", default = "default2" }}, {{ name = "arg3", default = "default3" }}] }}
-
-    task_with_some_defaults = {{ cmd = "echo Testing {{{{ required_arg }}}} with {{{{ optional_arg }}}}", args = ["required_arg", {{ name = "optional_arg", default = "optional-default" }}] }}
-
-    task_all_required = {{ cmd = "echo All args required: {{{{ arg1 }}}} {{{{ arg2 }}}} {{{{ arg3 }}}}", args = ["arg1", "arg2", "arg3"] }}
     """
     manifest.write_text(toml)
 
@@ -423,7 +429,15 @@ def test_task_args(pixi: Path, tmp_pixi_workspace: Path) -> None:
     )
 
     verify_cli_command(
-        [pixi, "run", "--manifest-path", manifest, "task_with_defaults", "custom1", "custom2"],
+        [
+            pixi,
+            "run",
+            "--manifest-path",
+            manifest,
+            "task_with_defaults",
+            "custom1",
+            "custom2",
+        ],
         stdout_contains="Running task with custom1 and custom2 and default3",
     )
 
@@ -441,8 +455,26 @@ def test_task_args(pixi: Path, tmp_pixi_workspace: Path) -> None:
         stdout_contains="Running task with custom1 and custom2 and custom3",
     )
 
+
+def test_task_args_with_some_defaults(pixi: Path, tmp_pixi_workspace: Path) -> None:
+    """Test tasks with a mix of required and default arguments."""
+    manifest = tmp_pixi_workspace.joinpath("pixi.toml")
+    toml = f"""
+    {EMPTY_BOILERPLATE_PROJECT}
+    [tasks]
+    task_with_some_defaults = {{ cmd = "echo Testing {{{{ required_arg }}}} with {{{{ optional_arg }}}}", args = ["required_arg", {{ name = "optional_arg", default = "optional-default" }}] }}
+    """
+    manifest.write_text(toml)
+
     verify_cli_command(
-        [pixi, "run", "--manifest-path", manifest, "task_with_some_defaults", "required-value"],
+        [
+            pixi,
+            "run",
+            "--manifest-path",
+            manifest,
+            "task_with_some_defaults",
+            "required-value",
+        ],
         stdout_contains="Testing required-value with optional-default",
     )
 
@@ -459,8 +491,28 @@ def test_task_args(pixi: Path, tmp_pixi_workspace: Path) -> None:
         stdout_contains="Testing required-value with custom-optional",
     )
 
+
+def test_task_args_all_required(pixi: Path, tmp_pixi_workspace: Path) -> None:
+    """Test tasks where all arguments are required."""
+    manifest = tmp_pixi_workspace.joinpath("pixi.toml")
+    toml = f"""
+    {EMPTY_BOILERPLATE_PROJECT}
+    [tasks]
+    task_all_required = {{ cmd = "echo All args required: {{{{ arg1 }}}} {{{{ arg2 }}}} {{{{ arg3 }}}}", args = ["arg1", "arg2", "arg3"] }}
+    """
+    manifest.write_text(toml)
+
     verify_cli_command(
-        [pixi, "run", "--manifest-path", manifest, "task_all_required", "val1", "val2", "val3"],
+        [
+            pixi,
+            "run",
+            "--manifest-path",
+            manifest,
+            "task_all_required",
+            "val1",
+            "val2",
+            "val3",
+        ],
         stdout_contains="All args required: val1 val2 val3",
     )
 
@@ -470,8 +522,137 @@ def test_task_args(pixi: Path, tmp_pixi_workspace: Path) -> None:
         stderr_contains="no value provided for argument arg2 in task task_all_required",
     )
 
+
+def test_task_args_too_many(pixi: Path, tmp_pixi_workspace: Path) -> None:
+    """Test error handling when too many arguments are provided."""
+    manifest = tmp_pixi_workspace.joinpath("pixi.toml")
+    toml = f"""
+    {EMPTY_BOILERPLATE_PROJECT}
+    [tasks]
+    task_with_defaults = {{ cmd = "echo Running task with {{{{ arg1 }}}} and {{{{ arg2 }}}} and {{{{ arg3 }}}}", args = [{{ name = "arg1", default = "default1" }}, {{ name = "arg2", default = "default2" }}, {{ name = "arg3", default = "default3" }}] }}
+    """
+    manifest.write_text(toml)
+
     verify_cli_command(
-        [pixi, "run", "--manifest-path", manifest, "task_with_defaults", "a", "b", "c", "d"],
+        [
+            pixi,
+            "run",
+            "--manifest-path",
+            manifest,
+            "task_with_defaults",
+            "a",
+            "b",
+            "c",
+            "d",
+        ],
         ExitCode.FAILURE,
         stderr_contains="task task_with_defaults has more arguments than expected",
+    )
+
+
+def test_task_with_dependency_args(pixi: Path, tmp_pixi_workspace: Path) -> None:
+    """Test passing arguments to a dependency task."""
+    manifest = tmp_pixi_workspace.joinpath("pixi.toml")
+    toml = f"""
+    {EMPTY_BOILERPLATE_PROJECT}
+    [tasks]
+    base-task = {{ cmd = "echo Base task with {{{{ arg1 }}}} and {{{{ arg2 }}}}", args = [{{ name = "arg1", default = "default1" }}, {{ name = "arg2", default = "default2" }}] }}
+
+    parent-task = {{ depends-on = [{{ task = "base-task", args = ["custom1", "custom2"] }}] }}
+
+    parent-task-partial = {{ depends-on = [{{ task = "base-task", args = ["override1"] }}] }}
+    """
+    manifest.write_text(toml)
+
+    verify_cli_command(
+        [pixi, "run", "--manifest-path", manifest, "parent-task"],
+        stdout_contains="Base task with custom1 and custom2",
+    )
+
+    verify_cli_command(
+        [pixi, "run", "--manifest-path", manifest, "parent-task-partial"],
+        stdout_contains="Base task with override1 and default2",
+    )
+
+
+def test_task_in_multiple_environments(pixi: Path, tmp_pixi_workspace: Path) -> None:
+    """Test running dependent tasks in different environments."""
+    manifest = tmp_pixi_workspace.joinpath("pixi.toml")
+    toml = f"""
+    {EMPTY_BOILERPLATE_PROJECT}
+    [tasks]
+    echo-env = "echo default environment"
+
+    main-task = {{ cmd = "echo Main task in default", depends-on = ["echo-env"] }}
+
+    [feature.dev.tasks]
+    echo-env = "echo dev environment"
+
+    [feature.prod.tasks]
+    echo-env = "echo prod environment"
+
+    [environments]
+    dev = ["dev"]
+    prod = ["prod"]
+    """
+    manifest.write_text(toml)
+
+    verify_cli_command(
+        [pixi, "run", "--manifest-path", manifest, "main-task"],
+        stdout_contains=["Main task in default", "default environment"],
+    )
+
+    verify_cli_command(
+        [pixi, "run", "--manifest-path", manifest, "--environment", "dev", "main-task"],
+        stdout_contains=["Main task in default", "dev environment"],
+    )
+
+    verify_cli_command(
+        [
+            pixi,
+            "run",
+            "--manifest-path",
+            manifest,
+            "--environment",
+            "prod",
+            "main-task",
+        ],
+        stdout_contains=["Main task in default", "prod environment"],
+    )
+
+
+def test_complex_task_dependencies_with_args(pixi: Path, tmp_pixi_workspace: Path) -> None:
+    """Test complex task dependencies with arguments."""
+    manifest = tmp_pixi_workspace.joinpath("pixi.toml")
+    toml = f"""
+    {EMPTY_BOILERPLATE_PROJECT}
+    [tasks]
+    install = {{ cmd = "echo Installing with manifest {{{{ path }}}} and flag {{{{ flag }}}}", args = [{{ name = "path", default = "/default/path" }}, {{ name = "flag", default = "--normal" }}] }}
+
+    build = {{ cmd = "echo Building with {{{{ mode }}}}", args = ["mode"] }}
+
+    install-release = {{ depends-on = [{{ task = "install", args = ["/path/to/manifest", "--debug"] }}] }}
+
+    deploy = {{
+        cmd = "echo Deploying",
+        depends-on = [
+            {{ task = "install", args = ["/custom/path", "--verbose"] }},
+            {{ task = "build", args = ["production"] }}
+        ]
+    }}
+    """
+    manifest.write_text(toml)
+
+    verify_cli_command(
+        [pixi, "run", "--manifest-path", manifest, "install-release"],
+        stdout_contains="Installing with manifest /path/to/manifest and flag --debug",
+    )
+
+    verify_cli_command(
+        [pixi, "run", "--manifest-path", manifest, "deploy"],
+        stdout_contains=[
+            "Installing with manifest /custom/path and flag --verbose",
+            "Building with production",
+            "Deploying",
+        ],
     )
