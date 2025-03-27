@@ -199,6 +199,8 @@ impl<'p> TaskGraph<'p> {
                         (Some(args), None)
                     };
 
+                    println!("task: {:?}", task);
+
                     if skip_deps {
                         return Ok(Self {
                             project,
@@ -212,6 +214,7 @@ impl<'p> TaskGraph<'p> {
                             }],
                         });
                     }
+
                     return Self::from_root(
                         project,
                         search_envs,

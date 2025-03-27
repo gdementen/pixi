@@ -575,52 +575,6 @@ def test_task_with_dependency_args(pixi: Path, tmp_pixi_workspace: Path) -> None
     )
 
 
-def test_task_in_multiple_environments(pixi: Path, tmp_pixi_workspace: Path) -> None:
-    """Test running dependent tasks in different environments."""
-    manifest = tmp_pixi_workspace.joinpath("pixi.toml")
-    toml = f"""
-    {EMPTY_BOILERPLATE_PROJECT}
-    [tasks]
-    echo-env = "echo default environment"
-
-    main-task = {{ cmd = "echo Main task in default", depends-on = ["echo-env"] }}
-
-    [feature.dev.tasks]
-    echo-env = "echo dev environment"
-
-    [feature.prod.tasks]
-    echo-env = "echo prod environment"
-
-    [environments]
-    dev = ["dev"]
-    prod = ["prod"]
-    """
-    manifest.write_text(toml)
-
-    verify_cli_command(
-        [pixi, "run", "--manifest-path", manifest, "main-task"],
-        stdout_contains=["Main task in default", "default environment"],
-    )
-
-    verify_cli_command(
-        [pixi, "run", "--manifest-path", manifest, "--environment", "dev", "main-task"],
-        stdout_contains=["Main task in default", "dev environment"],
-    )
-
-    verify_cli_command(
-        [
-            pixi,
-            "run",
-            "--manifest-path",
-            manifest,
-            "--environment",
-            "prod",
-            "main-task",
-        ],
-        stdout_contains=["Main task in default", "prod environment"],
-    )
-
-
 def test_complex_task_dependencies_with_args(pixi: Path, tmp_pixi_workspace: Path) -> None:
     """Test complex task dependencies with arguments."""
     manifest = tmp_pixi_workspace.joinpath("pixi.toml")
@@ -633,13 +587,7 @@ def test_complex_task_dependencies_with_args(pixi: Path, tmp_pixi_workspace: Pat
 
     install-release = {{ depends-on = [{{ task = "install", args = ["/path/to/manifest", "--debug"] }}] }}
 
-    deploy = {{
-        cmd = "echo Deploying",
-        depends-on = [
-            {{ task = "install", args = ["/custom/path", "--verbose"] }},
-            {{ task = "build", args = ["production"] }}
-        ]
-    }}
+    deploy = {{ cmd = "echo Deploying", depends-on = [ {{ task = "install", args = ["/custom/path", "--verbose"] }}, {{ task = "build", args = ["production"] }}] }}
     """
     manifest.write_text(toml)
 

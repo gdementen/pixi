@@ -1,4 +1,4 @@
-use pixi_toml::{OneOrMany, TomlFromStr, TomlIndexMap, TomlWith};
+use pixi_toml::{TomlFromStr, TomlIndexMap};
 use toml_span::{
     de_helpers::{expected, TableHelper},
     value::ValueInner,
@@ -48,31 +48,72 @@ impl<'de> toml_span::Deserialize<'de> for TomlTask {
         let mut warnings = Vec::new();
 
         let mut depends_on = |th: &mut TableHelper| {
-            let depends_on =
-                th.optional::<TomlWith<_, OneOrMany<TomlFromStr<Dependency>>>>("depends-on");
-            if let Some(depends_on) = depends_on {
-                let deps = depends_on.into_inner();
-                return Some(deps);
+            let mut depends_on = th.take("depends-on");
+            if let Some((_, mut value)) = depends_on.take() {
+                let deps = match value.take() {
+                    ValueInner::Array(array) => array
+                        .into_iter()
+                        .map(|mut item| {
+                            let span = item.span;
+                            match item.take() {
+                                ValueInner::String(str) => Ok::<Dependency, DeserError>(
+                                    Dependency(TaskName::from(str.to_string()), None),
+                                ),
+                                ValueInner::Table(table) => {
+                                    let mut th = TableHelper::from((table, span));
+                                    let name = th.required::<String>("task")?;
+                                    let args = th.optional::<Vec<String>>("args");
+                                    Ok(Dependency(TaskName::from(name), args))
+                                }
+                                inner => Err(expected("string or table", inner, span).into()),
+                            }
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                    ValueInner::String(str) => {
+                        vec![Dependency(TaskName::from(str.to_string()), None)]
+                    }
+                    inner => {
+                        return Err::<Vec<Dependency>, DeserError>(
+                            expected("string or array", inner, value.span).into(),
+                        );
+                    }
+                };
+
+                return Ok(deps);
             }
 
             if let Some((key, mut value)) = th.table.remove_entry("depends_on") {
                 warnings
                     .push(Deprecation::renamed_field("depends_on", "depends-on", key.span).into());
-                return match TomlWith::<_, OneOrMany<TomlFromStr<Dependency>>>::deserialize(
-                    &mut value,
-                ) {
-                    Ok(depends_on) => {
-                        let deps = depends_on.into_inner();
-                        Some(deps)
+                let deps = match value.take() {
+                    ValueInner::Array(array) => array
+                        .into_iter()
+                        .map(|mut item| {
+                            let span = item.span;
+                            match item.take() {
+                                ValueInner::String(str) => Ok::<Dependency, DeserError>(
+                                    Dependency(TaskName::from(str.to_string()), None),
+                                ),
+                                ValueInner::Table(table) => {
+                                    let mut th = TableHelper::from((table, span));
+                                    let name = th.required::<String>("name")?;
+                                    let args = th.optional::<Vec<String>>("args");
+                                    Ok(Dependency(TaskName::from(name), args))
+                                }
+                                inner => Err(expected("string or table", inner, span).into()),
+                            }
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                    ValueInner::String(str) => {
+                        vec![Dependency(TaskName::from(str.to_string()), None)]
                     }
-                    Err(err) => {
-                        th.errors.extend(err.errors);
-                        None
-                    }
+                    inner => return Err(expected("string or array", inner, value.span).into()),
                 };
+
+                return Ok(deps);
             }
 
-            None
+            Ok(vec![])
         };
 
         let task = if let Some(cmd) = cmd {
